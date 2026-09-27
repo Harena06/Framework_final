@@ -1,6 +1,7 @@
 package framework.util;
 
 import framework.annotation.Controller;
+import framework.annotation.RestController;
 import framework.annotation.Url;
 import framework.mapping.Mapping;
 import framework.mapping.VerbUrl;
@@ -98,7 +99,13 @@ public class Utilitaire {
     }
 
     public static List<Class<?>> scanControllers(String packageName) throws Exception {
-        return scanAnnotation(packageName, Controller.class);
+        List<Class<?>> result = new ArrayList<>();
+        for (Class<?> clazz : scanClasses(packageName)) {
+            if (clazz.isAnnotationPresent(Controller.class) || clazz.isAnnotationPresent(RestController.class)) {
+                result.add(clazz);
+            }
+        }
+        return result;
     }
 
     public static List<Mapping> scanMappings(String packageName) throws Exception {
