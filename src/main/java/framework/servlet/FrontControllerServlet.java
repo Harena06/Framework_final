@@ -2,12 +2,14 @@ package framework.servlet;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.lang.reflect.InvocationTargetException;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 import framework.mapping.Mapping;
 import framework.mapping.VerbUrl;
+import framework.reflection.Reflector;
 import framework.util.Utilitaire;
 
 import jakarta.servlet.ServletConfig;
@@ -68,8 +70,32 @@ public class FrontControllerServlet extends HttpServlet {
             out.println();
             out.println("Méthode :");
             out.println(mapping.getMethodName());
+            out.println();
+            execute(mapping, req, res, out);
         }
         out.flush();
+    }
+
+    /**
+     * Cree une instance du controleur puis execute la methode de la route.
+     */
+    private void execute(Mapping mapping, HttpServletRequest req, HttpServletResponse res, PrintWriter out) {
+        try {
+            Object result = Reflector.invoke(mapping, req, res);
+            if (result instanceof String) {
+                out.println("Retour :");
+                out.println(result);
+            }
+        } catch (InvocationTargetException e) {
+            reportError(mapping, out, e.getCause() != null ? e.getCause() : e);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            reportError(mapping, out, e);
+        }
+    }
+
+    private void reportError(Mapping mapping, PrintWriter out, Throwable e) {
+        out.println("Erreur lors de l'exécution de " + mapping.getLabel() + " :");
+        e.printStackTrace(out);
     }
 
 
