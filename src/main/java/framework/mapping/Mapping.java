@@ -4,13 +4,13 @@ import java.lang.reflect.Method;
 
 public class Mapping {
 
-    private final String url;
+    private final VerbUrl verbUrl;
     private final Class<?> controller;
     private final Method method;
 
-    public Mapping(String url, Class<?> controller, Method method) {
-        if (url == null || url.isBlank()) {
-            throw new IllegalArgumentException("L'URL d'un mapping ne peut pas etre vide");
+    public Mapping(VerbUrl verbUrl, Class<?> controller, Method method) {
+        if (verbUrl == null) {
+            throw new IllegalArgumentException("La cle de routage d'un mapping ne peut pas etre null");
         }
         if (controller == null) {
             throw new IllegalArgumentException("Le controleur d'un mapping ne peut pas etre null");
@@ -18,13 +18,25 @@ public class Mapping {
         if (method == null) {
             throw new IllegalArgumentException("La methode d'un mapping ne peut pas etre null");
         }
-        this.url = url.trim();
+        this.verbUrl = verbUrl;
         this.controller = controller;
         this.method = method;
     }
 
+    public Mapping(String url, String httpMethod, Class<?> controller, Method method) {
+        this(new VerbUrl(url, httpMethod), controller, method);
+    }
+
+    public VerbUrl getVerbUrl() {
+        return verbUrl;
+    }
+
     public String getUrl() {
-        return url;
+        return verbUrl.getUrl();
+    }
+
+    public String getHttpMethod() {
+        return verbUrl.getMethod();
     }
 
     public Class<?> getController() {
@@ -49,7 +61,7 @@ public class Mapping {
 
     @Override
     public String toString() {
-        return url + " -> " + getLabel();
+        return verbUrl + " -> " + getLabel();
     }
 
     @Override
@@ -60,11 +72,11 @@ public class Mapping {
         if (!(o instanceof Mapping)) {
             return false;
         }
-        return url.equals(((Mapping) o).url);
+        return verbUrl.equals(((Mapping) o).verbUrl);
     }
 
     @Override
     public int hashCode() {
-        return url.hashCode();
+        return verbUrl.hashCode();
     }
 }

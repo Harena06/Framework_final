@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import framework.mapping.Mapping;
+import framework.mapping.VerbUrl;
 import framework.util.Utilitaire;
 
 import jakarta.servlet.ServletConfig;
@@ -20,9 +21,10 @@ public class FrontControllerServlet extends HttpServlet {
     public static final String BASE_PACKAGE_PARAM = "basePackage";
 
     private static final String DEFAULT_BASE_PACKAGE = "controller";
+    private static final String DEFAULT_VERB = "GET";
     private static final String ARROW = " → ";
 
-    private final Map<String, Mapping> mappings = new LinkedHashMap<>();
+    private final Map<VerbUrl, Mapping> mappings = new LinkedHashMap<>();
 
     private String basePackage = DEFAULT_BASE_PACKAGE;
 
@@ -30,7 +32,7 @@ public class FrontControllerServlet extends HttpServlet {
         try {
             mappings.clear();
             for (Mapping mapping : Utilitaire.scanMappings(getBasePackage())) {
-                mappings.put(mapping.getUrl(), mapping);
+                mappings.put(mapping.getVerbUrl(), mapping);
             }
         } catch (Exception e) {
             throw new ServletException("Impossible de construire les routes du framework", e);
@@ -40,19 +42,22 @@ public class FrontControllerServlet extends HttpServlet {
     protected void processRequest(HttpServletRequest req, HttpServletResponse res)
             throws ServletException, IOException {
         String path = getPath(req);
+        String verb = getVerb(req);
+        VerbUrl route = new VerbUrl(path, verb);
         PrintWriter out = res.getWriter();
 
         out.println("URL: " + req.getRequestURL());
         out.println("URI: " + req.getRequestURI());
         out.println("Context Path: " + req.getContextPath());
         out.println("Path : " + path);
+        out.println("Verbe : " + verb);
         out.println();
 
-        Mapping mapping = mappings.get(path);
+        Mapping mapping = mappings.get(route);
         if (mapping == null) {
             out.println("Lien non trouvé :");
             out.println();
-            out.println(path);
+            out.println(route);
             out.println();
             writeMappings(out);
         } else {
@@ -67,32 +72,26 @@ public class FrontControllerServlet extends HttpServlet {
         out.flush();
     }
 
-    /**
-     * Affiche toutes les routes supportees.
-     */
+
     public void writeMappings(PrintWriter out) {
         out.println("Liens disponibles :");
         out.println();
         for (Mapping mapping : mappings.values()) {
-            out.println(mapping.getUrl());
+            out.println(mapping.getVerbUrl());
             out.println(ARROW);
             out.println(mapping.getLabel());
             out.println();
         }
     }
 
-    /**
-     * Toutes les routes connues.
-     */
-    public Map<String, Mapping> getMappings() {
+
+    public Map<VerbUrl, Mapping> getMappings() {
         return Collections.unmodifiableMap(mappings);
     }
 
-    /**
-     * Route associee a une URL, ou null si l'URL n'existe pas.
-     */
-    public Mapping findMapping(String url) {
-        return mappings.get(normalize(url));
+
+    public Mapping findMapping(String httpMethod, String url) {
+        return mappings.get(new VerbUrl(normalize(url), httpMethod));
     }
 
     protected void doGet(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
@@ -103,8 +102,25 @@ public class FrontControllerServlet extends HttpServlet {
         processRequest(req, res);
     }
 
+    protected void doPut(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
+        processRequest(req, res);
+    }
+
+    protected void doDelete(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
+        processRequest(req, res);
+    }
+
+    protected void doPatch(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
+        processRequest(req, res);
+    }
+
     private String getPath(HttpServletRequest req) {
         return normalize(req.getRequestURI().substring(req.getContextPath().length()));
+    }
+
+    private String getVerb(HttpServletRequest req) {
+        String verb = req.getMethod();
+        return (verb == null || verb.isBlank()) ? DEFAULT_VERB : verb;
     }
 
     private String normalize(String path) {
