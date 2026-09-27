@@ -7,6 +7,9 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import framework.annotation.RestController;
+import framework.annotation.WebApi;
+import framework.json.Json;
 import framework.listener.ContextListener;
 import framework.mapping.Mapping;
 import framework.mapping.VerbUrl;
@@ -86,7 +89,7 @@ public class FrontControllerServlet extends HttpServlet {
 
         Object result = null;
         try {
-            result = Reflector.invoke(mapping, req, res);
+            result = Reflector.invoke(mapping, req, res, out);
         } catch (InvocationTargetException e) {
             writeHeader(out, req, path, verb);
             out.println("Lien trouvé");
@@ -99,6 +102,12 @@ public class FrontControllerServlet extends HttpServlet {
             out.println("Lien trouvé");
             out.println();
             reportError(mapping, out, e);
+            out.flush();
+            return;
+        }
+
+        if (isWebApi(mapping)) {
+            writeJson(mapping, result, res, out);
             out.flush();
             return;
         }
@@ -123,8 +132,27 @@ public class FrontControllerServlet extends HttpServlet {
         out.flush();
     }
 
-    private void writeHeader(PrintWriter out, HttpServletRequest req, String path, String verb) {
-        out.println("URL: " + req.getRequestURL());
+
+    private boolean isWebApi(Mapping mapping) {
+        return mapping.getMethod().isAnnotationPresent(WebApi.class)
+                || mapping.getController().isAnnotationPresent(RestController.class);
+    }
+
+    private void writeJson(Mapping mapping, Object result, HttpServletResponse res, PrintWriter out)
+            throws IOException {
+        res.setContentType("application/json;charset=UTF-8");
+        res.setCharacterEncoding("UTF-8");
+        if (mapping.getMethod().getReturnType() == void.class) {
+            return;
+        }
+        if (result instanceof String) {
+            out.print(result);
+        } else {
+            out.print(Json.toJson(result));
+        }
+    }
+
+    private void writeHeader(PrintWriter out, HttpServletRequest req, String path, String verb) {        out.println("URL: " + req.getRequestURL());
         out.println("URI: " + req.getRequestURI());
         out.println("Context Path: " + req.getContextPath());
         out.println("Path : " + path);
