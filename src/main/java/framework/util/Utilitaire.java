@@ -1,8 +1,9 @@
 package framework.util;
 
 import framework.annotation.Controller;
-import framework.annotation.UrlMapping;
+import framework.annotation.Url;
 import framework.mapping.Mapping;
+import framework.mapping.VerbUrl;
 
 import java.io.File;
 import java.lang.annotation.Annotation;
@@ -40,9 +41,6 @@ public class Utilitaire {
         if (classes.isEmpty()) {
             throw new Exception("Package introuvable ou vide : " + packageName);
         }
-
-        // Un meme package peut etre visible via plusieurs entrees du classpath
-        // (dossier de classes et JAR) : on ne garde qu'une occurrence par classe.
         Map<String, Class<?>> uniques = new LinkedHashMap<>();
         for (Class<?> clazz : classes) {
             uniques.putIfAbsent(clazz.getName(), clazz);
@@ -107,13 +105,13 @@ public class Utilitaire {
         List<Mapping> mappings = new ArrayList<>();
         for (Class<?> controller : scanControllers(packageName)) {
             for (Method method : controller.getDeclaredMethods()) {
-                UrlMapping urlMapping = method.getAnnotation(UrlMapping.class);
-                if (urlMapping != null) {
-                    mappings.add(new Mapping(urlMapping.value(), controller, method));
+                Url url = method.getAnnotation(Url.class);
+                if (url != null) {
+                    mappings.add(new Mapping(new VerbUrl(url.value(), url.method()), controller, method));
                 }
             }
         }
-        mappings.sort(Comparator.comparing(Mapping::getUrl));
+        mappings.sort(Comparator.comparing(Mapping::getUrl).thenComparing(Mapping::getHttpMethod));
         return mappings;
     }
 
