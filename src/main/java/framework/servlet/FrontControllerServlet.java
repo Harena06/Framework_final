@@ -7,12 +7,14 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import framework.listener.ContextListener;
 import framework.mapping.Mapping;
 import framework.mapping.VerbUrl;
 import framework.reflection.Reflector;
 import framework.util.Utilitaire;
 
 import jakarta.servlet.ServletConfig;
+import jakarta.servlet.ServletContext;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
@@ -26,16 +28,34 @@ public class FrontControllerServlet extends HttpServlet {
     private static final String DEFAULT_VERB = "GET";
     private static final String ARROW = " → ";
 
-    private final Map<VerbUrl, Mapping> mappings = new LinkedHashMap<>();
+    private Map<VerbUrl, Mapping> mappings = new LinkedHashMap<>();
 
     private String basePackage = DEFAULT_BASE_PACKAGE;
 
     public void init() throws ServletException {
+        mappings = loadMappings();
+        if (mappings == null) {
+            mappings = buildMappings();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<VerbUrl, Mapping> loadMappings() {
+        ServletContext context = getServletContext();
+        if (context == null) {
+            return null;
+        }
+        Object attribute = context.getAttribute(ContextListener.ROUTES_ATTRIBUTE);
+        return (attribute instanceof Map) ? (Map<VerbUrl, Mapping>) attribute : null;
+    }
+
+    private Map<VerbUrl, Mapping> buildMappings() throws ServletException {
         try {
-            mappings.clear();
+            Map<VerbUrl, Mapping> table = new LinkedHashMap<>();
             for (Mapping mapping : Utilitaire.scanMappings(getBasePackage())) {
-                mappings.put(mapping.getVerbUrl(), mapping);
+                table.put(mapping.getVerbUrl(), mapping);
             }
+            return table;
         } catch (Exception e) {
             throw new ServletException("Impossible de construire les routes du framework", e);
         }
@@ -76,9 +96,6 @@ public class FrontControllerServlet extends HttpServlet {
         out.flush();
     }
 
-    /**
-     * Cree une instance du controleur puis execute la methode de la route.
-     */
     private void execute(Mapping mapping, HttpServletRequest req, HttpServletResponse res, PrintWriter out) {
         try {
             Object result = Reflector.invoke(mapping, req, res);
@@ -167,6 +184,13 @@ public class FrontControllerServlet extends HttpServlet {
         ServletConfig config = getServletConfig();
         if (config != null) {
             String param = config.getInitParameter(BASE_PACKAGE_PARAM);
+            if (param != null && !param.isBlank()) {
+                return param.trim();
+            }
+        }
+        ServletContext context = getServletContext();
+        if (context != null) {
+            String param = context.getInitParameter(ContextListener.BASE_PACKAGE_PARAM);
             if (param != null && !param.isBlank()) {
                 return param.trim();
             }
