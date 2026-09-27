@@ -10,6 +10,7 @@ import java.util.Map;
 import framework.listener.ContextListener;
 import framework.mapping.Mapping;
 import framework.mapping.VerbUrl;
+import framework.mvc.ModelAndView;
 import framework.reflection.Reflector;
 import framework.util.Utilitaire;
 
@@ -23,8 +24,11 @@ import jakarta.servlet.http.HttpServletResponse;
 public class FrontControllerServlet extends HttpServlet {
 
     public static final String BASE_PACKAGE_PARAM = "basePackage";
+    public static final String VIEW_PATH_PARAM = "viewPath";
 
     private static final String DEFAULT_BASE_PACKAGE = "controller";
+    private static final String DEFAULT_VIEW_PATH = "/WEB-INF/views/";
+    private static final String VIEW_SUFFIX = ".jsp";
     private static final String DEFAULT_VERB = "GET";
     private static final String ARROW = " → ";
 
@@ -68,46 +72,95 @@ public class FrontControllerServlet extends HttpServlet {
         VerbUrl route = new VerbUrl(path, verb);
         PrintWriter out = res.getWriter();
 
+        Mapping mapping = mappings.get(route);
+        if (mapping == null) {
+            writeHeader(out, req, path, verb);
+            out.println("Lien non trouvé :");
+            out.println();
+            out.println(route);
+            out.println();
+            writeMappings(out);
+            out.flush();
+            return;
+        }
+
+        Object result = null;
+        try {
+            result = Reflector.invoke(mapping, req, res);
+        } catch (InvocationTargetException e) {
+            writeHeader(out, req, path, verb);
+            out.println("Lien trouvé");
+            out.println();
+            reportError(mapping, out, e.getCause() != null ? e.getCause() : e);
+            out.flush();
+            return;
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            writeHeader(out, req, path, verb);
+            out.println("Lien trouvé");
+            out.println();
+            reportError(mapping, out, e);
+            out.flush();
+            return;
+        }
+
+        if (render(result, req, res, out)) {
+            return;
+        }
+
+        writeHeader(out, req, path, verb);
+        out.println("Lien trouvé");
+        out.println();
+        out.println("Controller :");
+        out.println(mapping.getControllerName());
+        out.println();
+        out.println("Méthode :");
+        out.println(mapping.getMethodName());
+        if (result != null) {
+            out.println();
+            out.println("Retour :");
+            out.println(result);
+        }
+        out.flush();
+    }
+
+    private void writeHeader(PrintWriter out, HttpServletRequest req, String path, String verb) {
         out.println("URL: " + req.getRequestURL());
         out.println("URI: " + req.getRequestURI());
         out.println("Context Path: " + req.getContextPath());
         out.println("Path : " + path);
         out.println("Verbe : " + verb);
         out.println();
-
-        Mapping mapping = mappings.get(route);
-        if (mapping == null) {
-            out.println("Lien non trouvé :");
-            out.println();
-            out.println(route);
-            out.println();
-            writeMappings(out);
-        } else {
-            out.println("Lien trouvé");
-            out.println();
-            out.println("Controller :");
-            out.println(mapping.getControllerName());
-            out.println();
-            out.println("Méthode :");
-            out.println(mapping.getMethodName());
-            out.println();
-            execute(mapping, req, res, out);
-        }
-        out.flush();
     }
 
-    private void execute(Mapping mapping, HttpServletRequest req, HttpServletResponse res, PrintWriter out) {
-        try {
-            Object result = Reflector.invoke(mapping, req, res);
-            if (result instanceof String) {
-                out.println("Retour :");
-                out.println(result);
-            }
-        } catch (InvocationTargetException e) {
-            reportError(mapping, out, e.getCause() != null ? e.getCause() : e);
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            reportError(mapping, out, e);
+    private boolean render(Object result, HttpServletRequest req, HttpServletResponse res, PrintWriter out)
+            throws ServletException, IOException {
+        if (result instanceof String) {
+            return forward((String) result, Collections.emptyMap(), req, res);
         }
+        if (result instanceof ModelAndView) {
+            ModelAndView modelAndView = (ModelAndView) result;
+            if (!modelAndView.hasView()) {
+                for (Map.Entry<String, Object> entry : modelAndView.getModel().entrySet()) {
+                    out.println(entry.getKey() + " : " + entry.getValue());
+                }
+                return false;
+            }
+            return forward(modelAndView.getViewName(), modelAndView.getModel(), req, res);
+        }
+        return false;
+    }
+
+    private boolean forward(String viewName, Map<String, Object> model, HttpServletRequest req,
+            HttpServletResponse res) throws ServletException, IOException {
+        if (viewName == null || viewName.isBlank()) {
+            return false;
+        }
+        String path = viewName.startsWith("/") ? viewName : getViewPath() + viewName + VIEW_SUFFIX;
+        for (Map.Entry<String, Object> entry : model.entrySet()) {
+            req.setAttribute(entry.getKey(), entry.getValue());
+        }
+        req.getRequestDispatcher(path).forward(req, res);
+        return true;
     }
 
     private void reportError(Mapping mapping, PrintWriter out, Throwable e) {
@@ -180,22 +233,35 @@ public class FrontControllerServlet extends HttpServlet {
         return result;
     }
 
-    private String getBasePackage() {
+    private String getViewPath() {
+        String path = getParameter(VIEW_PATH_PARAM);
+        if (path == null) {
+            return DEFAULT_VIEW_PATH;
+        }
+        return path.endsWith("/") ? path : path + "/";
+    }
+
+    private String getParameter(String name) {
         ServletConfig config = getServletConfig();
         if (config != null) {
-            String param = config.getInitParameter(BASE_PACKAGE_PARAM);
+            String param = config.getInitParameter(name);
             if (param != null && !param.isBlank()) {
                 return param.trim();
             }
         }
         ServletContext context = getServletContext();
         if (context != null) {
-            String param = context.getInitParameter(ContextListener.BASE_PACKAGE_PARAM);
+            String param = context.getInitParameter(name);
             if (param != null && !param.isBlank()) {
                 return param.trim();
             }
         }
-        return basePackage;
+        return null;
+    }
+
+    private String getBasePackage() {
+        String param = getParameter(BASE_PACKAGE_PARAM);
+        return param != null ? param : basePackage;
     }
 
     public void setBasePackage(String basePackage) {
