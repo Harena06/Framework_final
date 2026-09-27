@@ -33,6 +33,7 @@ find "$SRC_DIR" -name "*.java" > sources.txt
 echo "Compilation..."
 
 javac \
+    -encoding UTF-8 \
     -cp "$SERVLET_API_JAR" \
     -d "$BUILD_DIR" \
     @sources.txt
