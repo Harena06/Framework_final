@@ -74,6 +74,7 @@ public class FrontControllerServlet extends HttpServlet {
         String verb = getVerb(req);
         VerbUrl route = new VerbUrl(path, verb);
         PrintWriter out = res.getWriter();
+        req.setCharacterEncoding("UTF-8");
 
         Mapping mapping = mappings.get(route);
         if (mapping == null) {
