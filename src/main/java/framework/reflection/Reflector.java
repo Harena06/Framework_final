@@ -5,6 +5,8 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
 import framework.mapping.Mapping;
+import framework.binding.ParameterBinder;
+import jakarta.servlet.http.HttpServletRequest;
 
 public class Reflector {
 
@@ -29,20 +31,14 @@ public class Reflector {
     }
 
     public static Object[] resolveArguments(Method method, Object... availableArguments) {
-        Class<?>[] types = method.getParameterTypes();
-        Object[] arguments = new Object[types.length];
-        for (int i = 0; i < types.length; i++) {
-            arguments[i] = findArgument(types[i], availableArguments);
-        }
-        return arguments;
-    }
-
-    private static Object findArgument(Class<?> type, Object... availableArguments) {
-        for (Object argument : availableArguments) {
-            if (argument != null && type.isAssignableFrom(argument.getClass())) {
-                return argument;
+        HttpServletRequest req = null;
+        for (Object argument : availableArguments){
+            if(argument instanceof HttpServletRequest){
+                req = (HttpServletRequest) argument;
+                break;
             }
         }
-        return null;
+        return ParameterBinder.bind(method, req, availableArguments);
     }
+
 }
