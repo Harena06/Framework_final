@@ -17,13 +17,16 @@ import framework.mvc.ModelAndView;
 import framework.reflection.Reflector;
 import framework.util.Utilitaire;
 
+
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.annotation.MultipartConfig;
 
+@MultipartConfig(maxFileSize = 10 * 1024 * 1024, maxRequestSize = 20 * 1024 * 1024, fileSizeThreshold = 1024)
 public class FrontControllerServlet extends HttpServlet {
 
     public static final String BASE_PACKAGE_PARAM = "basePackage";
