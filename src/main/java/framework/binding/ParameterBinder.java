@@ -6,14 +6,18 @@ import java.math.BigDecimal;
 import java.util.Locale;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.io.File;
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import framework.upload.MapFile;
 
 
 import framework.annotation.RequestParam;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.Part;
+import java.io.IOException;
 
 public class ParameterBinder {
     public static Object[] bind(Method method, HttpServletRequest req, Object[] frameworkArguments){
@@ -27,9 +31,11 @@ public class ParameterBinder {
     }    
 
        private static Object resolve(Parameter parameter, Class<?> type, HttpServletRequest request,
-            Object[] frameworkArguments) {
+        Object[] frameworkArguments) {
         RequestParam annotation = parameter.getAnnotation(RequestParam.class);
-
+        if (type == MapFile.class) {
+            return resolveMapFile(parameter,annotation,request);
+        }
         if (annotation == null) {
             Object frameworkArgument = findFrameworkArgument(type, frameworkArguments);
             if (frameworkArgument != null) {
@@ -59,6 +65,54 @@ public class ParameterBinder {
         return convert(name, raw, type);
     }
 
+    private static MapFile resolveMapFile(Parameter parameter, RequestParam annotation, HttpServletRequest req){
+        boolean required = (annotation == null) || annotation.required();
+        if (req == null) {
+            throw new BindingException("Requete null pour le parametre '" + parameter.getName() + "' de type MapFile"); 
+        }
+        String expectedName = (annotation != null && !annotation.value().isBlank()) ? annotation.value().trim() : parameter.getName();
+        Part filePart = null;
+        try {
+            List<Part> files =  new ArrayList<>();
+            for (Part part : req.getParts()) {
+                String submitted = part.getSubmittedFileName();
+                if (submitted != null && !submitted.isEmpty()) {
+                    files.add(part);
+                }
+            }
+            for (Part part : files) {
+                if (part.getName().equals(expectedName)) {
+                    filePart = part;
+                    break;
+                }
+            }
+            if (filePart == null && files.size() == 1) {
+                filePart = files.get(0);
+            }
+            if (filePart == null) {
+                if (!required) {
+                    return null;
+                }
+                if (files.isEmpty()) {
+                    throw new BindingException("Fichier manquant pour le parametre '" + expectedName + "' de type MapFile");
+                }
+            throw new BindingException("Plusieurs fichiers recus, impossible de choisir pour '" + expectedName
+                    + "'. Utilisez @RequestParam(\"nomDuChamp\") sur le parametre MapFile");
+            }
+            String fullName = filePart.getSubmittedFileName();
+            String baseName = fullName;
+            String extension = "";
+            int index = fullName.lastIndexOf('.');
+            if (index >= 0) {
+                baseName = fullName.substring(0, index);
+                extension = fullName.substring(index + 1).toLowerCase(Locale.ROOT);
+            }
+            byte[] data = filePart.getInputStream().readAllBytes();
+            return new MapFile(baseName, extension, data);
+        } catch (IOException | IllegalStateException | jakarta.servlet.ServletException e) {
+        throw new BindingException("Impossible de lire le fichier '" + expectedName + "' : " + e.getMessage(), e);
+    }
+    }
 
     private static Object findFrameworkArgument(Class<?> type, Object[] frameworkArguments) {
         for (Object argument : frameworkArguments) {
@@ -100,6 +154,9 @@ public class ParameterBinder {
             }
             if (type == BigDecimal.class) {
                 return new BigDecimal(raw.trim());
+            }
+            if(type == File.class){
+                return new File(raw.trim());
             }
         } catch (NumberFormatException e) {
             throw new BindingException("Valeur invalide pour '" + name + "' : '" + raw
