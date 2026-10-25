@@ -3,12 +3,15 @@ package framework.servlet;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.Collections;
+import java.util.Enumeration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 import framework.annotation.RestController;
 import framework.annotation.WebApi;
+import framework.dto.Session;
 import framework.json.Json;
 import framework.listener.ContextListener;
 import framework.mapping.Mapping;
@@ -24,6 +27,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import jakarta.servlet.annotation.MultipartConfig;
 
 @MultipartConfig(maxFileSize = 10 * 1024 * 1024, maxRequestSize = 20 * 1024 * 1024, fileSizeThreshold = 1024)
@@ -93,7 +97,7 @@ public class FrontControllerServlet extends HttpServlet {
 
         Object result = null;
         try {
-            result = Reflector.invoke(mapping, req, res, out);
+            result = Reflector.invoke(mapping, resolveArguments(mapping, req, res, out));
         } catch (InvocationTargetException e) {
             writeHeader(out, req, path, verb);
             out.println("Lien trouvé");
@@ -136,6 +140,37 @@ public class FrontControllerServlet extends HttpServlet {
         out.flush();
     }
 
+
+    private Object[] resolveArguments(Mapping mapping, HttpServletRequest req, HttpServletResponse res,
+            PrintWriter out) {
+        if (!needsSession(mapping.getMethod())) {
+            return new Object[] { req, res, out };
+        }
+        return new Object[] { req, res, out, readSession(req) };
+    }
+
+    private boolean needsSession(Method method) {
+        for (Class<?> type : method.getParameterTypes()) {
+            if (Session.class.equals(type)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Session readSession(HttpServletRequest req) {
+        Session session = new Session();
+        HttpSession httpSession = req.getSession(false);
+        if (httpSession == null) {
+            return session;
+        }
+        Enumeration<String> names = httpSession.getAttributeNames();
+        while (names.hasMoreElements()) {
+            String name = names.nextElement();
+            session.set(name, httpSession.getAttribute(name));
+        }
+        return session;
+    }
 
     private boolean isWebApi(Mapping mapping) {
         return mapping.getMethod().isAnnotationPresent(WebApi.class)
