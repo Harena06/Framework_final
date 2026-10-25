@@ -14,16 +14,22 @@ Dec fenoina daoly le parametre an'le methode exactement  comme tel fa mapFile no
 
 
 # Sprint 9
-Mamorona methode histockena an'le session ohatra ny le MapFile, zany hoe mamorona MapSession
-De mitovy tamin'le mapFile rehefa jerena eo amin'le methode cote controlleur hoe misy MapSession ve le type mandeha
-de recuperen'le binding ataony de type session de iny no tahirizina, de amin'izay par rapport an'le session ny utilisateur no stocker
-Atao fotsiny le mapFile mba hafahana rehefa any aorina any anamboarana an'le authorization par rapport an'le utilisateur
-Fa amin'ity tsy map fotsiny fa mamorona class mihitsy de any no injectena
+Session
 
-Class MySession
-Map, String
-De asiana methode 
-Le map ao anatiny fenona par amin'le HttpSession
+Simple : il faut que la session de l'utilisateur soit disponible dans le controller de developpeur comme ca il peut faire ce qu'il veut avec
 
+On ne touche pas au authorisations pour le moment
 
-Ny controller de instancena indray mandeha ihany de stockena ao anaty context le instance controller
+Pour le moment :
+
+Il faut creer un nouveau Classe (dto.Session)
+Il y a un map dans cette classe et des methodes utils (get() et set())
+La classe n'est pas encore relier a HttpSession mais juste une classe ordinaire
+
+FrontControllerServlet : si il voit qu'il y a un parametre Session avant de passer la session
+
+On boucle l'HttpSession et on remplace toutes les valeurs de cette session dans le Map, si il en existe
+
+Rehefa tonga ao any amin'ny dev le Session de averina tsindrina le Map avy eo
+
+Amin'izay le Map an'le classetsika no lalaoviny fa tsy milalao HttpSession le dev
