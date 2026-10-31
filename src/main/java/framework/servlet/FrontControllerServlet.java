@@ -2,13 +2,18 @@ package framework.servlet;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.lang.reflect.Array;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 
+import framework.annotation.Auth;
 import framework.annotation.RestController;
 import framework.annotation.WebApi;
 import framework.dto.Session;
@@ -80,11 +85,11 @@ public class FrontControllerServlet extends HttpServlet {
         String path = getPath(req);
         String verb = getVerb(req);
         VerbUrl route = new VerbUrl(path, verb);
-        PrintWriter out = res.getWriter();
         req.setCharacterEncoding("UTF-8");
 
         Mapping mapping = mappings.get(route);
         if (mapping == null) {
+            PrintWriter out = res.getWriter();
             writeHeader(out, req, path, verb);
             out.println("Lien non trouvé :");
             out.println();
@@ -95,9 +100,15 @@ public class FrontControllerServlet extends HttpServlet {
             return;
         }
 
+        if (!checkAuthorization(mapping, req, res)) {
+            return;
+        }
+
+        PrintWriter out = res.getWriter();
         Object result = null;
         try {
-            result = Reflector.invoke(mapping, resolveArguments(mapping, req, res, out));
+            Object controller = getController(mapping, req);
+            result = Reflector.invoke(controller, mapping, resolveArguments(mapping, req, res, out));
         } catch (InvocationTargetException e) {
             writeHeader(out, req, path, verb);
             out.println("Lien trouvé");
@@ -140,6 +151,170 @@ public class FrontControllerServlet extends HttpServlet {
         out.flush();
     }
 
+
+    @SuppressWarnings("unchecked")
+    private Object getController(Mapping mapping, HttpServletRequest req) throws ReflectiveOperationException {
+        ServletContext context = req.getServletContext();
+        Object attribute = context == null ? null : context.getAttribute(ContextListener.CONTROLLERS_ATTRIBUTE);
+        Map<Class<?>, Object> controllerList;
+        if (attribute instanceof Map) {
+            controllerList = (Map<Class<?>, Object>) attribute;
+        } else {
+            controllerList = new HashMap<>();
+            if (context != null) {
+                context.setAttribute(ContextListener.CONTROLLERS_ATTRIBUTE, controllerList);
+            }
+        }
+        Object controller = controllerList.get(mapping.getController());
+        if (controller == null) {
+            controller = Reflector.newInstance(mapping.getController());
+            controllerList.put(mapping.getController(), controller);
+        }
+        return controller;
+    }
+
+    private boolean checkAuthorization(Mapping mapping, HttpServletRequest req, HttpServletResponse res)
+            throws IOException {
+        Auth auth = resolveAuth(mapping);
+        if (auth == null) {
+            return true;
+        }
+        HttpSession session = req.getSession(false);
+        if (session == null) {
+            handleUnauthorized(mapping, req, res);
+            return false;
+        }
+        String userAttribute = getContextConfig(ContextListener.SESSION_USER_ATTRIBUTE,
+                ContextListener.DEFAULT_SESSION_USER, req);
+        if (session.getAttribute(userAttribute) == null) {
+            handleUnauthorized(mapping, req, res);
+            return false;
+        }
+        String roleAttribute = getContextConfig(ContextListener.SESSION_ROLE_ATTRIBUTE,
+                ContextListener.DEFAULT_SESSION_ROLE, req);
+        Object userRoles = session.getAttribute(roleAttribute);
+        if (!hasRequiredRole(userRoles, auth.roles())) {
+            handleForbidden(mapping, req, res);
+            return false;
+        }
+        return true;
+    }
+
+    private Auth resolveAuth(Mapping mapping) {
+        Auth auth = mapping.getMethod().getAnnotation(Auth.class);
+        return auth != null ? auth : mapping.getController().getAnnotation(Auth.class);
+    }
+
+    private boolean hasRequiredRole(Object userRoles, String[] requiredRoles) {
+        boolean constrained = false;
+        for (String requiredRole : requiredRoles) {
+            if (requiredRole == null || requiredRole.isBlank()) {
+                continue;
+            }
+            constrained = true;
+            if (containsRole(userRoles, requiredRole.trim())) {
+                return true;
+            }
+        }
+        return !constrained;
+    }
+
+    private boolean containsRole(Object userRoles, String requiredRole) {
+        if (userRoles == null) {
+            return false;
+        }
+        if (userRoles instanceof CharSequence) {
+            return roleMatches(userRoles, requiredRole);
+        }
+        if (userRoles instanceof Collection) {
+            for (Object role : (Collection<?>) userRoles) {
+                if (roleMatches(role, requiredRole)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (userRoles.getClass().isArray()) {
+            int length = Array.getLength(userRoles);
+            for (int i = 0; i < length; i++) {
+                if (roleMatches(Array.get(userRoles, i), requiredRole)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return roleMatches(userRoles, requiredRole);
+    }
+
+    private boolean roleMatches(Object role, String requiredRole) {
+        if (role == null) {
+            return false;
+        }
+        String value = role instanceof Enum ? ((Enum<?>) role).name() : role.toString();
+        return requiredRole.equals(value.trim());
+    }
+
+    private void handleUnauthorized(Mapping mapping, HttpServletRequest req, HttpServletResponse res)
+            throws IOException {
+        res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        writeAuthError(mapping, req, res, HttpServletResponse.SC_UNAUTHORIZED,
+                "Unauthorized", "Authentification requise");
+    }
+
+    private void handleForbidden(Mapping mapping, HttpServletRequest req, HttpServletResponse res)
+            throws IOException {
+        res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+        writeAuthError(mapping, req, res, HttpServletResponse.SC_FORBIDDEN,
+                "Forbidden", "Acces refuse : role requis absent");
+    }
+
+    private void writeAuthError(Mapping mapping, HttpServletRequest req, HttpServletResponse res,
+            int status, String error, String message) throws IOException {
+        boolean json = isJsonResponse(mapping, req);
+        if (json) {
+            res.setContentType("application/json;charset=UTF-8");
+        } else {
+            res.setContentType("text/html;charset=UTF-8");
+        }
+        res.setCharacterEncoding("UTF-8");
+        PrintWriter out = res.getWriter();
+        if (json) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("status", status);
+            body.put("error", error);
+            body.put("message", message);
+            out.print(Json.toJson(body));
+        } else {
+            out.println("<!DOCTYPE html>");
+            out.println("<html>");
+            out.println("<head><meta charset=\"UTF-8\"><title>" + status + " " + error + "</title></head>");
+            out.println("<body>");
+            out.println("<h1>" + status + " " + error + "</h1>");
+            out.println("<p>" + message + "</p>");
+            out.println("</body>");
+            out.println("</html>");
+        }
+        out.flush();
+    }
+
+    private boolean isJsonResponse(Mapping mapping, HttpServletRequest req) {
+        if (mapping != null && isWebApi(mapping)) {
+            return true;
+        }
+        String accept = req.getHeader("Accept");
+        return accept != null && accept.toLowerCase(Locale.ROOT).contains("application/json");
+    }
+
+    private String getContextConfig(String attribute, String defaultValue, HttpServletRequest req) {
+        ServletContext context = req.getServletContext();
+        if (context != null) {
+            Object value = context.getAttribute(attribute);
+            if (value != null && !value.toString().isBlank()) {
+                return value.toString().trim();
+            }
+        }
+        return defaultValue;
+    }
 
     private Object[] resolveArguments(Mapping mapping, HttpServletRequest req, HttpServletResponse res,
             PrintWriter out) {
