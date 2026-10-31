@@ -22,7 +22,11 @@ public class Reflector {
     }
 
     public static Object invoke(Mapping mapping, Object... availableArguments) throws ReflectiveOperationException {
-        Object controller = newInstance(mapping.getController());
+        return invoke(newInstance(mapping.getController()), mapping, availableArguments);
+    }
+
+    public static Object invoke(Object controller, Mapping mapping, Object... availableArguments)
+            throws ReflectiveOperationException {
         Method method = mapping.getMethod();
         if (!Modifier.isPublic(method.getModifiers())) {
             method.setAccessible(true);
